@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Adjustment Agent</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f7f7f7; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { font-size: 24px; }
+        input[type="text"] { width: calc(100% - 22px); padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        button { width: 100%; padding: 10px; border: none; background-color: #007bff; color: white; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        #results { margin-top: 20px; padding: 10px; border-radius: 4px; background-color: #e9ecef; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; }
+        .error { color: #D8000C; background-color: #FFD2D2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Portfolio Adjustment Agent</h1>
+        <input type="text" id="queryInput" placeholder="e.g., Make Energy 5% in portfolio P1">
+        <button onclick="submitQuery()">Adjust Portfolio</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function submitQuery() {
+            const query = document.getElementById('queryInput').value;
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.textContent = 'Processing...';
+            resultsDiv.classList.remove('error');
+
+            try {
+                const response = await fetch('/portfolio/adjust-from-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'An unknown error occurred.');
+                }
+
+                // The response now contains a list of results
+                const results = data.results;
+                let finalHtml = '';
+
+                for (const result of results) {
+                    finalHtml += `<h2>${result.tool_name}</h2>`;
+                    if (result.summary) {
+                        finalHtml += `<p>${result.summary}</p>`;
+                    }
+                    if (result.details && result.details.length > 0) {
+                        finalHtml += '<ul>';
+                        // Details for show_top_constituents are [asset_id, {weight, sector}]
+                        // Details for adjust_sector_exposure are {asset_id, new_weight, old_weight}
+                        for (const item of result.details) {
+                            if (Array.isArray(item)) { // show_top_constituents format
+                                finalHtml += `<li><b>${item[0]}</b>: ${(item[1].weight * 100).toFixed(2)}%</li>`;
+                            } else { // adjust_sector_exposure format
+                                finalHtml += `<li><b>${item.asset_id}</b>: ${(item.new_weight * 100).toFixed(2)}%</li>`;
+                            }
+                        }
+                        finalHtml += '</ul>';
+                    } else if (result.error) {
+                        finalHtml += `<p class="error">${result.error}</p>`
+                    }
+                }
+                resultsDiv.innerHTML = finalHtml;
+
+            } catch (err) {
+                resultsDiv.textContent = `Error: ${err.message}`;
+                resultsDiv.classList.add('error');
+            }
+        }
+    </script>
+</body>
+</html>
