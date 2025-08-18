@@ -43,7 +43,6 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    // Use the error message from the JSON body if available
                     throw new Error(data.detail || data.error || 'An unknown error occurred.');
                 }
 
@@ -62,13 +61,17 @@
                             if (Array.isArray(item)) { // Handle tuple-like arrays from backend
                                 const key = item[0];
                                 const value = item[1];
-                                // Check if the value is an object with a 'weight' property
+                                // Check if the value is an object with a 'weight' property (from show_top_constituents)
                                 if (typeof value === 'object' && value !== null && 'weight' in value) {
-                                    // Format for show_top_constituents, now including the sector
-                                    finalHtml += `<li><b>${key}</b>: ${(value.weight * 100).toFixed(2)}% (${value.sector})</li>`;
+                                    const price = value.price !== 'N/A' ? `$${value.price.toFixed(2)}` : 'N/A';
+                                    finalHtml += `<li><b>${key}</b>: ${(value.weight * 100).toFixed(2)}% (${value.sector}) - ${price}</li>`;
                                 } else {
-                                    // Otherwise, treat it as a simple key-value pair (e.g., for lookup_sectors)
-                                    finalHtml += `<li><b>${key}</b>: ${value}</li>`;
+                                    // Format for other simple key-value pairs (e.g., lookup_sectors or lookup_prices)
+                                    if (result.tool_name === 'lookup_prices' && typeof value === 'number') {
+                                        finalHtml += `<li><b>${key}</b>: $${value.toFixed(2)}</li>`;
+                                    } else {
+                                        finalHtml += `<li><b>${key}</b>: ${value}</li>`;
+                                    }
                                 }
                             } else if (typeof item === 'object' && item !== null) { // Handle object lists
                                 // Check for adjust_sector_exposure format

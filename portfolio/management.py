@@ -4,18 +4,21 @@ import random
 original_portfolio_cache = {}
 working_portfolio_cache = {}
 asset_sector_map = {} # Using a dictionary for efficient lookups
+asset_price_map = {} # Cache for asset prices
 SECTORS = ["Financials", "Energy", "Banking", "Industrials", "Textiles"]
 ASSETS_PER_SECTOR = 4000 # Increased to 4000 for a 20k universe
 
 def setup_asset_universe():
     """Generates a 20k asset universe as a direct lookup map."""
-    global asset_sector_map
+    global asset_sector_map, asset_price_map
     if asset_sector_map: return
     for i, sector in enumerate(SECTORS):
         for j in range(1, ASSETS_PER_SECTOR + 1):
             # Asset IDs are now 1-based, e.g., BBID1, BBID2, ...
             asset_id = f"BBID{i * ASSETS_PER_SECTOR + j}"
             asset_sector_map[asset_id] = sector
+            # Assign a random price between 1.0 and 5.0
+            asset_price_map[asset_id] = round(random.uniform(1.0, 5.0), 2)
 
 def generate_new_portfolio(portfolio_id: str):
     setup_asset_universe()

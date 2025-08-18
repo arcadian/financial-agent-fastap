@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from portfolio.management import working_portfolio_cache, original_portfolio_cache, SECTORS, asset_sector_map
+from portfolio.management import working_portfolio_cache, original_portfolio_cache, SECTORS, asset_sector_map, asset_price_map
 
 # --- Core Tool/Function Logic ---
 def _adjust_portfolio_sector(portfolio_id: str, sector: str, set_weight: float = None, increase_by_weight: float = None, decrease_by_weight: float = None):
@@ -112,11 +112,17 @@ def _show_top_constituents(portfolio_id: str, n: int = 20, sector: str = None):
     if not constituents_to_sort:
         return []
 
-    # Sort by weight descending
-    sorted_constituents = sorted(constituents_to_sort.items(), key=lambda item: item[1]["weight"], reverse=True)
+    # Sort by weight descending, then by asset ID ascending as a tie-breaker
+    sorted_constituents = sorted(constituents_to_sort.items(), key=lambda item: (-item[1]['weight'], item[0]))
     
-    # Return the top N
-    return sorted_constituents[:n]
+    # Enhance the output to include the price
+    enhanced_results = []
+    for asset_id, data in sorted_constituents[:n]:
+        data["price"] = asset_price_map.get(asset_id, "N/A")
+        enhanced_results.append((asset_id, data))
+
+    # Return the top N with full details
+    return enhanced_results
 
 def _move_weight(portfolio_id: str, from_sector: str, to_sectors: list):
     if portfolio_id not in working_portfolio_cache:
@@ -190,6 +196,13 @@ def _lookup_sectors(asset_ids: list[str]):
         for asset_id in asset_ids
     }
 
+def _lookup_prices(asset_ids: list[str]):
+    """Internal function to look up prices for a list of asset IDs."""
+    return {
+        asset_id: asset_price_map.get(asset_id, "Not Found")
+        for asset_id in asset_ids
+    }
+
 def _batch_adjust_sectors(portfolio_id: str, adjustments: list):
     if portfolio_id not in working_portfolio_cache:
         raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
@@ -252,6 +265,7 @@ tool_registry = {
         "schema": {
             "name": "adjust_sector_exposure",
             "description": "Adjusts the weight of a specific sector by setting an absolute target, or increasing/decreasing by a relative amount.",
+            "type": "write",
             "parameters": {
                 "portfolio_id": {"type": "string", "description": "The ID of the portfolio to modify (e.g., \"P1\")."},
                 "sector": {"type": "string", "description": f"The sector to adjust. Available sectors are {SECTORS}."},
@@ -267,6 +281,7 @@ tool_registry = {
         "schema": {
             "name": "show_top_constituents",
             "description": "Shows the top N constituents of a portfolio, sorted by weight. Can be filtered by sector.",
+            "type": "read",
             "parameters": {
                 "portfolio_id": {"type": "string", "description": "The ID of the portfolio to view (e.g., \"P1\")."},
                 "n": {"type": "integer", "description": "The number of top constituents to show. Defaults to 20."}, 
@@ -280,6 +295,7 @@ tool_registry = {
         "schema": {
             "name": "move_weight",
             "description": "Moves a specified percentage of weight from a single source sector to one or more destination sectors.",
+            "type": "write",
             "parameters": {
                 "portfolio_id": {"type": "string", "description": "The ID of the portfolio to modify (e.g., \"P1\")."},
                 "from_sector": {"type": "string", "description": "The single sector from which to move weight.",},
@@ -293,6 +309,7 @@ tool_registry = {
         "schema": {
             "name": "reset_portfolio",
             "description": "Resets a portfolio to its original composition from the start of the session.",
+            "type": "write",
             "parameters": {
                 "portfolio_id": {"type": "string", "description": "The ID of the portfolio to reset (e.g., \"P1\")."}
             },
@@ -304,6 +321,7 @@ tool_registry = {
         "schema": {
             "name": "batch_adjust_sectors",
             "description": "Applies a batch of adjustments to multiple sectors in a single, balanced transaction.",
+            "type": "write",
             "parameters": {
                 "portfolio_id": {"type": "string", "description": "The ID of the portfolio to modify (e.g., \"P1\")."},
                 "adjustments": {"type": "array", "description": "A list of adjustments to perform.", "items": {"type": "object", "properties": {"sector": {"type": "string"}, "increase_by_weight": {"type": "float"}, "decrease_by_weight": {"type": "float"}}}}
@@ -316,8 +334,21 @@ tool_registry = {
         "schema": {
             "name": "lookup_sectors",
             "description": "Looks up the sector for a given list of asset IDs.",
+            "type": "read",
             "parameters": {
                 "asset_ids": {"type": "array", "description": "A list of asset IDs to look up.", "items": {"type": "string"}}
+            },
+            "required": ["asset_ids"]
+        }
+    },
+    "lookup_prices": {
+        "function": _lookup_prices,
+        "schema": {
+            "name": "lookup_prices",
+            "description": "Looks up the price for a given list of asset IDs.",
+            "type": "read",
+            "parameters": {
+                "asset_ids": {"type": "array", "description": "A list of asset IDs to look up prices for.", "items": {"type": "string"}}
             },
             "required": ["asset_ids"]
         }
