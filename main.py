@@ -9,11 +9,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.orchestrator import run_financial_agent
-from portfolio.management import generate_new_portfolio
+from portfolio.management import generate_new_portfolio, asset_sector_map
 
 # --- Data Models ---
 class AdjustFromTextRequest(BaseModel):
     query: str
+
+class AssetLookupRequest(BaseModel):
+    asset_ids: list[str]
 
 # --- FastAPI Lifespan & App Initialization ---
 @asynccontextmanager
@@ -38,3 +41,12 @@ async def read_root():
 def adjust_portfolio_from_text(request: AdjustFromTextRequest):
     """Processes a natural language query via the financial agent."""
     return run_financial_agent(request.query)
+
+@app.post("/assets/lookup-sectors")
+def lookup_asset_sectors(request: AssetLookupRequest):
+    """Looks up the sector for a given list of asset IDs."""
+    response = {
+        asset_id: asset_sector_map.get(asset_id, "Not Found")
+        for asset_id in request.asset_ids
+    }
+    return response

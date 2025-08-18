@@ -1,5 +1,6 @@
 import json
 import os
+import math
 from openai import OpenAI
 from agent.tools import tool_registry
 
@@ -91,11 +92,42 @@ Your response:
       }}
     }}
   ]
+}}
+
+Example of a chained command:
+User: "show me the sectors for these assets: BBID1, BBID4001"
+Your response:
+{{
+  "tool_calls": [
+    {{
+      "tool_name": "lookup_sectors",
+      "parameters": {{
+        "asset_ids": ["BBID1, BBID4001"]
+      }}
+    }}
+  ]
+}}
+
+Example of a simple command that does not need chaining:
+User: "show the top 3 constituents in P1 with their sectors"
+Your response:
+{{
+  "tool_calls": [
+    {{
+      "tool_name": "show_top_constituents",
+      "parameters": {{
+        "portfolio_id": "P1",
+        "n": 3
+      }}
+    }}
+  ]
 }}'''
 
     completion = client.chat.completions.create(
         model="gpt-4-turbo-preview", # Using a more advanced model for better multi-command parsing
         response_format={ "type": "json_object" },
+        logprobs=True,
+        top_logprobs=2,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query}
@@ -108,5 +140,24 @@ Your response:
     usage = completion.usage
     print(f"[Token Usage - Classifier] Input: {usage.prompt_tokens}, Output: {usage.completion_tokens}, Total: {usage.total_tokens}")
 
+    # --- Logprobs Analysis ---
+    avg_confidence = 0.0
+    if completion.choices[0].logprobs:
+        logprobs_content = completion.choices[0].logprobs.content
+        if logprobs_content:
+            sum_of_logprobs = sum(lp.logprob for lp in logprobs_content)
+            num_tokens = len(logprobs_content)
+            avg_logprob = sum_of_logprobs / num_tokens
+            avg_confidence = math.exp(avg_logprob)
+
+            print("\n[Logprobs Analysis]")
+            print(f"  - Average Per-Token Confidence: {avg_confidence:.2%}")
+            print("  [Top 5 Token Details]")
+            for i, top_logprob in enumerate(logprobs_content[:5]):
+                confidence = math.exp(top_logprob.logprob)
+                print(f"  Token {i+1}: '{top_logprob.token}' (Confidence: {confidence:.2%})")
+            print("\n")
+
     response_json = json.loads(response_text)
-    return response_json.get("tool_calls", [])
+    tool_calls = response_json.get("tool_calls", [])
+    return tool_calls, avg_confidence

@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from portfolio.management import working_portfolio_cache, original_portfolio_cache, SECTORS
+from portfolio.management import working_portfolio_cache, original_portfolio_cache, SECTORS, asset_sector_map
 
 # --- Core Tool/Function Logic ---
 def _adjust_portfolio_sector(portfolio_id: str, sector: str, set_weight: float = None, increase_by_weight: float = None, decrease_by_weight: float = None):
@@ -60,14 +60,21 @@ def _adjust_portfolio_sector(portfolio_id: str, sector: str, set_weight: float =
                 new_composition[asset_id]["weight"] = equal_weight_add
     # --- Original Logic for Normal Cases ---
     else:
+        current_other_weight = 1.0 - current_sector_weight
+        # Defensively check for zero weights inside the loop
+        if current_sector_weight <= 0 or current_other_weight <= 0:
+            # This case should ideally not be hit due to outer logic, but as a safeguard:
+            # If we need to adjust but one side is zero, an equal distribution is more stable.
+            # This part of logic would need more detailed specs, so we raise an error for now.
+            raise HTTPException(status_code=500, detail="Cannot perform pro-rata adjustment on a zero-weight portfolio slice.")
+
         for asset_id, data in new_composition.items():
             if data["sector"] == sector:
-                if current_sector_weight > 0: # Avoid division by zero
-                    new_composition[asset_id]["weight"] += weight_adjustment * (data["weight"] / current_sector_weight)
+                pro_rata_factor = data["weight"] / current_sector_weight
+                new_composition[asset_id]["weight"] += weight_adjustment * pro_rata_factor
             else:
-                current_other_weight = 1.0 - current_sector_weight
-                if current_other_weight > 0: # Avoid division by zero
-                    new_composition[asset_id]["weight"] -= weight_adjustment * (data["weight"] / current_other_weight)
+                pro_rata_factor = data["weight"] / current_other_weight
+                new_composition[asset_id]["weight"] -= weight_adjustment * pro_rata_factor
 
     # --- Create list of changes for the response ---
     sector_assets_with_changes = []
@@ -129,6 +136,9 @@ def _move_weight(portfolio_id: str, from_sector: str, to_sectors: list):
     original_composition = working_portfolio_cache[portfolio_id]
     current_from_weight = sum(c["weight"] for c in original_composition.values() if c["sector"] == from_sector)
 
+    if current_from_weight <= 0:
+        raise HTTPException(status_code=400, detail=f"Cannot move weight from {from_sector} as it has no weight in the portfolio.")
+
     if current_from_weight < total_weight_to_move:
         raise HTTPException(status_code=400, detail=f"Cannot move {total_weight_to_move:.2%} from {from_sector} as it only has {current_from_weight:.2%}.")
 
@@ -173,6 +183,13 @@ def _reset_portfolio(portfolio_id: str):
     working_portfolio_cache[portfolio_id] = {k: v.copy() for k, v in original_portfolio_cache[portfolio_id].items()}
     return {"message": f"Portfolio {portfolio_id} has been successfully reset to its original composition."}
 
+def _lookup_sectors(asset_ids: list[str]):
+    """Internal function to look up sectors for a list of asset IDs."""
+    return {
+        asset_id: asset_sector_map.get(asset_id, "Not Found")
+        for asset_id in asset_ids
+    }
+
 def _batch_adjust_sectors(portfolio_id: str, adjustments: list):
     if portfolio_id not in working_portfolio_cache:
         raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
@@ -196,13 +213,15 @@ def _batch_adjust_sectors(portfolio_id: str, adjustments: list):
 
     # First, fund the net change from all unmentioned sectors pro-rata
     unmentioned_weight = sum(v["weight"] for k, v in original_composition.items() if v["sector"] not in mentioned_sectors)
-    if unmentioned_weight > 0:
-        funding_factor = 1 - (net_weight_change / unmentioned_weight)
-        for asset_id, data in new_composition.items():
-            if data["sector"] not in mentioned_sectors:
-                data["weight"] *= funding_factor
-    elif net_weight_change != 0:
-        raise HTTPException(status_code=400, detail="Cannot perform adjustment as there is no weight in unmentioned sectors to source from.")
+    
+    # Safeguard against division by zero if unmentioned sectors have no weight to give/take
+    if unmentioned_weight <= 0 and net_weight_change != 0:
+        raise HTTPException(status_code=400, detail="Cannot perform adjustment as there is no weight in unmentioned sectors to source from or allocate to.")
+
+    funding_factor = 1 - (net_weight_change / unmentioned_weight) if unmentioned_weight > 0 else 1
+    for asset_id, data in new_composition.items():
+        if data["sector"] not in mentioned_sectors:
+            data["weight"] *= funding_factor
 
     # Second, apply the specific adjustments to each mentioned sector
     for adj in adjustments:
@@ -290,6 +309,17 @@ tool_registry = {
                 "adjustments": {"type": "array", "description": "A list of adjustments to perform.", "items": {"type": "object", "properties": {"sector": {"type": "string"}, "increase_by_weight": {"type": "float"}, "decrease_by_weight": {"type": "float"}}}}
             },
             "required": ["portfolio_id", "adjustments"]
+        }
+    },
+    "lookup_sectors": {
+        "function": _lookup_sectors,
+        "schema": {
+            "name": "lookup_sectors",
+            "description": "Looks up the sector for a given list of asset IDs.",
+            "parameters": {
+                "asset_ids": {"type": "array", "description": "A list of asset IDs to look up.", "items": {"type": "string"}}
+            },
+            "required": ["asset_ids"]
         }
     }
 }

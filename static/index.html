@@ -28,7 +28,7 @@
             const query = document.getElementById('queryInput').value;
             const resultsDiv = document.getElementById('results');
             
-            resultsDiv.textContent = 'Processing...';
+            resultsDiv.innerHTML = 'Processing...';
             resultsDiv.classList.remove('error');
 
             try {
@@ -43,27 +43,38 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.detail || 'An unknown error occurred.');
+                    // Use the error message from the JSON body if available
+                    throw new Error(data.detail || data.error || 'An unknown error occurred.');
                 }
 
-                // The response now contains a list of results
                 const results = data.results;
                 let finalHtml = '';
 
                 for (const result of results) {
-                    finalHtml += `<h2>${result.tool_name}</h2>`;
+                    finalHtml += `<h3>${result.tool_name}</h3>`;
                     if (result.summary) {
                         finalHtml += `<p>${result.summary}</p>`;
                     }
+
                     if (result.details && result.details.length > 0) {
                         finalHtml += '<ul>';
-                        // Details for show_top_constituents are [asset_id, {weight, sector}]
-                        // Details for adjust_sector_exposure are {asset_id, new_weight, old_weight}
                         for (const item of result.details) {
-                            if (Array.isArray(item)) { // show_top_constituents format
-                                finalHtml += `<li><b>${item[0]}</b>: ${(item[1].weight * 100).toFixed(2)}%</li>`;
-                            } else { // adjust_sector_exposure format
-                                finalHtml += `<li><b>${item.asset_id}</b>: ${(item.new_weight * 100).toFixed(2)}%</li>`;
+                            if (Array.isArray(item)) { // Handle tuple-like arrays from backend
+                                const key = item[0];
+                                const value = item[1];
+                                // Check if the value is an object with a 'weight' property
+                                if (typeof value === 'object' && value !== null && 'weight' in value) {
+                                    // Format for show_top_constituents, now including the sector
+                                    finalHtml += `<li><b>${key}</b>: ${(value.weight * 100).toFixed(2)}% (${value.sector})</li>`;
+                                } else {
+                                    // Otherwise, treat it as a simple key-value pair (e.g., for lookup_sectors)
+                                    finalHtml += `<li><b>${key}</b>: ${value}</li>`;
+                                }
+                            } else if (typeof item === 'object' && item !== null) { // Handle object lists
+                                // Check for adjust_sector_exposure format
+                                if ('asset_id' in item && 'new_weight' in item) {
+                                    finalHtml += `<li><b>${item.asset_id}</b>: ${(item.new_weight * 100).toFixed(2)}%</li>`;
+                                }
                             }
                         }
                         finalHtml += '</ul>';
