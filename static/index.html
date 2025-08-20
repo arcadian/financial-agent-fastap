@@ -65,19 +65,23 @@
                                 if (typeof value === 'object' && value !== null && 'weight' in value) {
                                     const price = value.price !== 'N/A' ? `$${value.price.toFixed(2)}` : 'N/A';
                                     finalHtml += `<li><b>${key}</b>: ${(value.weight * 100).toFixed(2)}% (${value.sector}) - ${price}</li>`;
+                                } else if (result.tool_name === 'lookup_prices' && typeof value === 'number') {
+                                    finalHtml += `<li><b>${key}</b>: $${value.toFixed(2)}</li>`;
                                 } else {
-                                    // Format for other simple key-value pairs (e.g., lookup_sectors or lookup_prices)
-                                    if (result.tool_name === 'lookup_prices' && typeof value === 'number') {
-                                        finalHtml += `<li><b>${key}</b>: $${value.toFixed(2)}</li>`;
-                                    } else {
-                                        finalHtml += `<li><b>${key}</b>: ${value}</li>`;
-                                    }
+                                    finalHtml += `<li><b>${key}</b>: ${value}</li>`;
                                 }
                             } else if (typeof item === 'object' && item !== null) { // Handle object lists
-                                // Check for adjust_sector_exposure format
-                                if ('asset_id' in item && 'new_weight' in item) {
+                                // Specific checks for object types
+                                if ('asset_id' in item && 'new_weight' in item) { // adjust_sector_exposure format
                                     finalHtml += `<li><b>${item.asset_id}</b>: ${(item.new_weight * 100).toFixed(2)}%</li>`;
+                                } else if ('status' in item && 'asset_id' in item) { // manage_assets_by_quantity operations
+                                    finalHtml += `<li>${item.asset_id}: ${item.status} (Change: ${item.quantity_change})</li>`;
+                                } else {
+                                    // Fallback for any other unexpected object format
+                                    finalHtml += `<li>${JSON.stringify(item)}</li>`;
                                 }
+                            } else if (typeof item === 'string') { // Handle pre-formatted strings from create_portfolio
+                                finalHtml += `<li>${item}</li>`;
                             }
                         }
                         finalHtml += '</ul>';

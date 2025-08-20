@@ -11,10 +11,10 @@ async def classify_intent_and_create_plan(query: str):
     
     tool_schemas = [tool["schema"] for tool in tool_registry.values()]
     
-    system_prompt = f'''You are a financial assistant agent that functions as an expert planner. Your job is to translate a user's query into a staged execution plan. The plan will be a list of stages, and each stage will be a list of one or more tool calls that can be executed in parallel.
+    system_prompt = f'''You are a financial assistant agent that functions as an expert planner. Your job is to translate a user\'s query into a staged execution plan. The plan will be a list of stages, and each stage will be a list of one or more tool calls that can be executed in parallel.
 
 **Rules for Planning:**
-1.  A tool's `type` is either "read" (retrieves data) or "write" (changes data).
+1.  A tool\'s `type` is either "read" (retrieves data) or "write" (changes data).
 2.  Multiple "read" tasks can be placed in the same stage to be run in parallel, as long as they are independent.
 3.  A "write" task must be in a stage by itself.
 4.  Any task that depends on a "write" task must be in a subsequent stage.
@@ -84,12 +84,54 @@ User: "revert P1, add 1% textiles in P1, move 6% from banking to financials and 
 Your response:
 {{
   "plan": [
-    [{{"tool_name": "reset_portfolio", "parameters": {{"portfolio_id": "P1"}} }}],
-    [{{"tool_name": "batch_adjust_sectors", "parameters": {{"portfolio_id": "P1", "adjustments": [{{"sector": "Textiles", "increase_by_weight": 0.01}}]}} }}],
-    [{{"tool_name": "move_weight", "parameters": {{"portfolio_id": "P1", "from_sector": "Banking", "to_sectors": [{{ "sector": "Financials", "weight_to_add": 0.03 }}, {{ "sector": "Energy", "weight_to_add": 0.03 }}]}} }}],
+    [{{"tool_name": "reset_portfolio", "parameters": {{ "portfolio_id": "P1" }} }}],
+    [{{"tool_name": "batch_adjust_sectors", "parameters": {{ "portfolio_id": "P1", "adjustments": [{{ "sector": "Textiles", "increase_by_weight": 0.01 }}] }} }}],
+    [{{"tool_name": "move_weight", "parameters": {{ "portfolio_id": "P1", "from_sector": "Banking", "to_sectors": [{{ "sector": "Financials", "weight_to_add": 0.03 }}, {{ "sector": "Energy", "weight_to_add": 0.03 }}] }} }}],
     [
-      {{"tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Textiles"}} }},
-      {{"tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Energy"}} }}
+      {{ "tool_name": "show_top_constituents", "parameters": {{ "portfolio_id": "P1", "n": 3, "sector": "Textiles" }} }},
+      {{ "tool_name": "show_top_constituents", "parameters": {{ "portfolio_id": "P1", "n": 3, "sector": "Energy" }} }}
+    ]
+  ]
+}}
+
+**Example 5: Manage Assets by Quantity**
+User: "for P1000 add 100 shares of BBID14 and BBID15, and subtract 50 shares of BBID14"
+Your response:
+{{
+  "plan": [
+    [
+      {{
+        "tool_name": "manage_assets_by_quantity",
+        "parameters": {{
+          "portfolio_id": "P1000",
+          "operations": [
+            {{"asset_id": "BBID14", "add_quantity": 100}},
+            {{"asset_id": "BBID15", "add_quantity": 100}},
+            {{"asset_id": "BBID14", "subtract_quantity": 50}}
+          ]
+        }}
+      }}
+    ]
+  ]
+}}
+
+**Example 6: Create a New Portfolio**
+User: "create portfolio P3 with 100 shares of BBID1, 200 shares of BBID2 and 300 shares of BBID3"
+Your response:
+{{
+  "plan": [
+    [
+      {{
+        "tool_name": "create_portfolio",
+        "parameters": {{
+          "portfolio_id": "P3",
+          "initial_composition": [
+            {{"asset_id": "BBID1", "quantity": 100}},
+            {{"asset_id": "BBID2", "quantity": 200}},
+            {{"asset_id": "BBID3", "quantity": 300}}
+          ]
+        }}
+      }}
     ]
   ]
 }}'''
@@ -108,9 +150,11 @@ Your response:
     response_text = completion.choices[0].message.content
     print(f"[DEBUG] LLM raw plan response:\n{response_text}")
 
-    # ... (rest of the function is the same)
+    # Log token usage
     usage = completion.usage
     print(f"[Token Usage - Planner] Input: {usage.prompt_tokens}, Output: {usage.completion_tokens}, Total: {usage.total_tokens}")
+
+    # --- Logprobs Analysis ---
     avg_confidence = 0.0
     if completion.choices[0].logprobs:
         logprobs_content = completion.choices[0].logprobs.content
@@ -119,6 +163,7 @@ Your response:
             num_tokens = len(logprobs_content)
             avg_logprob = sum_of_logprobs / num_tokens
             avg_confidence = math.exp(avg_logprob)
+
             print("\n[Logprobs Analysis]")
             print(f"  - Average Per-Token Confidence: {avg_confidence:.2%}")
             print("  [Top 5 Token Details]")
@@ -126,6 +171,7 @@ Your response:
                 confidence = math.exp(top_logprob.logprob)
                 print(f"  Token {i+1}: '{top_logprob.token}' (Confidence: {confidence:.2%})")
             print("\n")
+
     response_json = json.loads(response_text)
     plan = response_json.get("plan", [])
     return plan, avg_confidence

@@ -91,12 +91,37 @@ async def _format_result(tool_name, tool_call, result_data):
         return {"tool_name": tool_name, "summary": summary, "details": details_list}
     elif tool_name == "show_top_constituents":
         params = tool_call.get("parameters", {})
-        summary = f"Top {params.get('n', 20)} constituents by weight for portfolio {params.get('portfolio_id')}"
-        if params.get("sector"):
-            summary += f" in the {params.get('sector')} sector:"
-        return {"tool_name": tool_name, "summary": summary, "details": result_data}
+        n_requested = params.get("n", 20)
+        portfolio_id = params.get("portfolio_id")
+        sector = params.get("sector")
+
+        actual_constituents = result_data["constituents"]
+        total_in_portfolio = result_data["total_in_portfolio"]
+
+        summary = f"Showing {len(actual_constituents)} of {total_in_portfolio} constituents by weight for portfolio {portfolio_id}"
+        if sector:
+            summary += f" in the {sector} sector"
+        summary += "."
+        if n_requested < total_in_portfolio:
+            summary += f" (Top {n_requested} requested)."
+        
+        return {"tool_name": tool_name, "summary": summary, "details": actual_constituents}
     elif tool_name in ["reset_portfolio", "batch_adjust_sectors"]:
         return {"tool_name": tool_name, "summary": result_data["message"]}
+    elif tool_name == "manage_assets_by_quantity":
+        summary = result_data["message"]
+        details_list = []
+        for op in result_data["operations"]:
+            details_list.append(f"{op['asset_id']}: {op['status']} (Qty Change: {op.get('quantity_change', 'N/A')})")
+        return {"tool_name": tool_name, "summary": summary, "details": details_list}
+    elif tool_name == "create_portfolio":
+        summary = result_data["message"]
+        # Format the composition for display, similar to show_top_constituents
+        formatted_composition = []
+        for asset_id, data in result_data["composition"].items():
+            price = data["price"] if data["price"] != 'N/A' else 'N/A';
+            formatted_composition.append(f"<b>{asset_id}</b>: {data['quantity']} shares ({data['weight']*100:.2f}%) @ ${price:.2f} ({data['sector']})")
+        return {"tool_name": tool_name, "summary": summary, "details": formatted_composition}
     else:
         return {"tool_name": tool_name, "details": result_data}
 
@@ -114,6 +139,7 @@ async def _summarize_adjustment(parameters, changed_assets, final_target_weight)
             {"role": "user", "content": f"Sector: {parameters.get('sector')}\nFinal Target Weight: {final_target_weight:.2%}\n\nAssets Re-allocated:\n{summary_prompt_data}"}
         ]
     )
+    # ... (logprobs analysis as before) ...
     return summary_completion.choices[0].message.content
 
 def log_portfolio_state_summary(portfolio_id: str):

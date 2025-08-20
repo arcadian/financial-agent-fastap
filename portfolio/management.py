@@ -20,18 +20,55 @@ def setup_asset_universe():
             # Assign a random price between 1.0 and 5.0
             asset_price_map[asset_id] = round(random.uniform(1.0, 5.0), 2)
 
-def generate_new_portfolio(portfolio_id: str):
+def generate_new_portfolio(portfolio_id: str, num_positions: int):
     setup_asset_universe()
-    # Get a list of all asset IDs from the map
     all_asset_ids = list(asset_sector_map.keys())
-    selected_asset_ids = random.sample(all_asset_ids, 100)
     
-    weight = 1 / 100
-    portfolio_composition = {
-        asset_id: {"weight": weight, "sector": asset_sector_map[asset_id]}
-        for asset_id in selected_asset_ids
-    }
+    # Ensure we don't try to select more positions than available assets
+    if num_positions > len(all_asset_ids):
+        raise ValueError(f"Cannot generate {num_positions} positions, only {len(all_asset_ids)} assets available.")
+
+    selected_asset_ids = random.sample(all_asset_ids, num_positions)
+    
+    portfolio_composition = {}
+    total_portfolio_value = 0.0
+
+    for asset_id in selected_asset_ids:
+        quantity = random.randint(100, 150)
+        price = asset_price_map[asset_id]
+        value = quantity * price
+        total_portfolio_value += value
+        
+        portfolio_composition[asset_id] = {
+            "quantity": quantity,
+            "sector": asset_sector_map[asset_id],
+            "price": price,
+            "value": value, # Store value for easier recalculation
+            "weight": 0.0 # Placeholder, will be calculated below
+        }
+    
+    # Calculate weights based on quantity and price
+    for asset_id, data in portfolio_composition.items():
+        portfolio_composition[asset_id]["weight"] = data["value"] / total_portfolio_value
+
     # Store in both original and working caches initially
     original_portfolio_cache[portfolio_id] = portfolio_composition
     working_portfolio_cache[portfolio_id] = {k: v.copy() for k, v in portfolio_composition.items()}
+    return portfolio_composition
+
+def recalculate_portfolio_weights(portfolio_composition: dict):
+    """Recalculates values and weights for a given portfolio composition based on quantities and prices."""
+    total_portfolio_value = 0.0
+    for asset_id, data in portfolio_composition.items():
+        data["value"] = data["quantity"] * data["price"]
+        total_portfolio_value += data["value"]
+
+    if total_portfolio_value == 0:
+        # Handle case where portfolio value becomes zero (e.g., all quantities are zero)
+        for asset_id, data in portfolio_composition.items():
+            data["weight"] = 0.0
+    else:
+        for asset_id, data in portfolio_composition.items():
+            data["weight"] = data["value"] / total_portfolio_value
+    
     return portfolio_composition

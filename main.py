@@ -24,9 +24,11 @@ class PriceLookupRequest(BaseModel):
 # --- FastAPI Lifespan & App Initialization ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Server starting up: Pre-generating portfolio for P1...")
-    generate_new_portfolio("P1")
-    print("Portfolio for P1 created and cached.")
+    print("Server starting up: Generating portfolios...")
+    generate_new_portfolio("P100", 100)
+    generate_new_portfolio("P1000", 1000)
+    generate_new_portfolio("P10000", 10000)
+    print("Portfolios P100, P1000, P10000 created and cached.")
     yield
     print("Server shutting down.")
 
