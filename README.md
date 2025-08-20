@@ -35,7 +35,7 @@ The agent understands a wide variety of commands, which can be combined in a sin
 - **Increase by a Relative Amount:**
   - `"increase energy by 3.5% in P1"`
 - **Decrease by a Relative Amount:**
-  - `"decrease industrials by 10% in P1"`
+  - `"decrease banking by 10% in P1"`
 
 ### 3. Advanced Portfolio Adjustments
 
@@ -50,12 +50,67 @@ The agent understands a wide variety of commands, which can be combined in a sin
   - `"reset P1"`
   - `"revert portfolio P1 to its initial state"`
 
-### 5. Chained Commands (Chain of Thought)
+---
 
-- **Action then Verification:**
-  - `"increase energy in P1 by 5% and then show me the top 5 constituents in that sector"`
-- **Complex Sequences:**
-  - `"reset P1, set banking to 20%, and finally show the top 10 names in the banking sector"`
+## Advanced Execution Patterns
+
+This agent is capable of understanding and executing complex queries by breaking them down into a staged plan, running independent tasks in parallel, and managing dependencies between tasks.
+
+### 1. Example: Parallel Execution (Independent Tasks)
+
+This showcases tasks that can run concurrently because they don't depend on each other's results or on a preceding state-changing operation.
+
+- **Command:** `"what are the sectors for BBID1 and BBID3 and what are the top 3 energy names for P1?"`
+
+- **How it works:**
+    - **Planner's Output:** The LLM planner will generate a plan with a single stage containing two independent tool calls:
+      ```json
+      {
+        "plan": [
+          [
+            { "tool_name": "lookup_sectors", "parameters": { "asset_ids": ["BBID1", "BBID3"] } },
+            { "tool_name": "show_top_constituents", "parameters": { "portfolio_id": "P1", "n": 3, "sector": "Energy" } }
+          ]
+        ]
+      }
+      ```
+    - **Orchestrator's Action:** The orchestrator sees these two tasks in the same stage. Since both are "read" operations and don't depend on each other, it executes them **in parallel** using `asyncio.gather()`. Both results will be returned once they are complete.
+
+### 2. Example: Sequential Execution (State Dependency)
+
+This demonstrates how the agent respects implicit dependencies where a "write" operation must occur after a "read" operation to ensure data consistency.
+
+- **Command:** `"set energy to 15% in P1 and then show me the top 6 names in that sector"`
+
+- **How it works:**
+    - **Planner's Output:** The LLM planner generates a plan with two sequential stages:
+      ```json
+      {
+        "plan": [
+          [ { "tool_name": "adjust_sector_exposure", "parameters": { "portfolio_id": "P1", "sector": "Energy", "set_weight": 0.15 } } ],
+          [ { "tool_name": "show_top_constituents", "parameters": { "portfolio_id": "P1", "n": 6, "sector": "Energy" } } ]
+        ]
+      }
+      ```
+    - **Orchestrator's Action:** The orchestrator executes Stage 1 first. It waits for the `adjust_sector_exposure` tool (a "write" operation) to complete, which modifies the portfolio's state. Only after this is done will it proceed to execute Stage 2, ensuring that the `show_top_constituents` command operates on the newly adjusted portfolio.
+
+### 3. Example: Chained Dependency (Output as Input)
+
+This is a direct data dependency, where the output of one tool is explicitly used as the input for the next.
+
+- **Command:** `"show me the sectors for the top 5 assets in P100"`
+
+- **How it works:**
+    - **Planner's Output:** The LLM planner generates a plan with two sequential stages:
+      ```json
+      {
+        "plan": [
+          [ { "tool_name": "show_top_constituents", "parameters": { "portfolio_id": "P100", "n": 5 } } ],
+          [ { "tool_name": "lookup_sectors", "parameters": { "asset_ids": "$PREVIOUS_STAGE_OUTPUT" } } ]
+        ]
+      }
+      ```
+    - **Orchestrator's Action:** The orchestrator executes Stage 1. It then captures the list of asset IDs from Stage 1's result and injects them as the `asset_ids` parameter for the `lookup_sectors` tool in Stage 2. This ensures the `lookup_sectors` tool operates on the exact assets identified in the previous step.
 
 ---
 
@@ -70,18 +125,26 @@ The backend service exposes the following endpoints:
 #### `POST /portfolio/adjust-from-text`
 - **Description:** The primary "agent" endpoint. It processes a natural language query, determines intent, executes tools, and returns the result(s).
 - **Request Body:** `{"query": "your query here"}`
-- **Response:** A JSON object containing a list of `results` from the executed commands.
+- **Response:** A JSON object containing a list of `results` from the one or more commands that were executed.
 
 #### `POST /assets/lookup-sectors`
 - **Description:** Performs a fast, bulk lookup to find the sector for each asset ID in a given list.
 - **Request Body:** `{"asset_ids": ["BBID1", "BBID4001"]}`
 - **Response:** A JSON dictionary mapping each asset ID to its sector name.
 
+#### `POST /assets/lookup-prices`
+- **Description:** Performs a fast, bulk lookup to find the price for a given list of asset IDs.
+- **Request Body:** `{"asset_ids": ["BBID1", "BBID4001"]}`
+- **Response:** A JSON dictionary mapping each asset ID to its price.
+
 #### `GET /docs`
-- **Description:** Provides interactive API documentation (Swagger UI) where you can view and test all endpoints directly from your browser.
+- **Description:** Provides a rich, interactive API documentation page using the Swagger UI. You can view all available endpoints, see their required parameters, and even test them live by sending requests directly from the browser page.
 
 #### `GET /redoc`
-- **Description:** Provides alternative, formal API documentation (ReDoc).
+- **Description:** Provides alternative, more formal API documentation (ReDoc).
+
+#### `GET /static/{file_path}`
+- **Description:** This endpoint is automatically created by the line `app.mount("/static", ...)` and is responsible for serving any static files (like CSS, JavaScript, or images) that are placed in the `static` directory.
 
 ---
 
