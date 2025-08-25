@@ -1,3 +1,8 @@
+## License
+
+This project is licensed under the MIT License.  
+See the [LICENSE](LICENSE) file for details.
+
 # Financial Portfolio Agent
 
 This project is a sophisticated financial agent powered by a FastAPI backend and a Large Language Model (LLM). It provides a natural language chat interface to manage and query a simulated financial portfolio, supporting a wide range of commands from simple lookups to complex, multi-step transactions.
