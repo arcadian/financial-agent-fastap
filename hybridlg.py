@@ -24,9 +24,9 @@ async def _adjust_portfolio_sector(portfolio_id, sector, set_weight=None, increa
 async def _show_top_constituents(portfolio_id, n=20, sector=None):
     print(f"[TOOL] Show top {n} constituents for {portfolio_id} (sector={sector})")
     return [
-        {"symbol": "AAPL", "weight": 0.4, "sector": "Tech"},
-        {"symbol": "MSFT", "weight": 0.35, "sector": "Tech"},
-        {"symbol": "IBM", "weight": 0.25, "sector": "Tech"}
+        {"asset_id": "AAPL", "weight": 0.4, "sector": "Tech"},
+        {"asset_id": "MSFT", "weight": 0.35, "sector": "Tech"},
+        {"asset_id": "IBM", "weight": 0.25, "sector": "Tech"}
     ][:n]
 
 async def _move_weight(portfolio_id, from_sector, to_sectors):
@@ -183,17 +183,27 @@ fn_map = {name: tool["function"] for name, tool in tool_registry.items()}
 
 async def resolve_args(task, state, llm):
     args_resolved = {}
-    # for k, v in task["args"].items():
-    #     if isinstance(v, dict) and "from_task" in v:
-    #         try:
-    #             args_resolved[k] = jmespath.search(v.get("selector", ""), state[v["from_task"]])
-    #         except Exception:
-    #             args_resolved[k] = None
-    #     else:
-    #         args_resolved[k] = v
+    dter_args_resolved = {}
+    for k, v in task["args"].items():
+        if isinstance(v, dict) and "from_task" in v:
+            try:
+                dter_args_resolved[k] = jmespath.search(v.get("selector", ""), state[v["from_task"]])
+            except Exception:
+                dter_args_resolved[k] = None
+        else:
+            dter_args_resolved[k] = v
+
+    print(f"resolved deterministically {dter_args_resolved}")
 
     prompt = f"""
 You are a financial assistant agent and expert planner.
+you are asked to resolve the arguments that this task needs
+which in some cases means you have to resolve them based on output (state) of the previous task
+for example if the previous task output (state) contains a dictionary of key values pairs as in 
+key (asset_id) and value (portfolio weight) and the current task is looking as an input argument
+the names of the stocks from the previous task with the 2 highest weights, you have to understand
+this dependency and resolve and fetch the 2 asset_id and pass them as arguments in the output which will be used
+later to construct the current tasks input space
 Current DAG state:
 {json.dumps(state, indent=2)}
 
@@ -221,7 +231,8 @@ def make_node(task, llm, fn_map):
         print(f"[RUNNING] {task['id']} with args: {args} and state{state}")
         result = await fn_map[task["fn"]](**args)
         print(f"[finished RUNNING] {task['id']} with args: {args} and state{state} and result{result}")
-        return {task["id"]: result}
+        return {**state, task["id"]: result}
+        #return {task["id"]: result}
     return node
 
 # ---------------------------
@@ -282,11 +293,13 @@ for example: "add 100 shares of ibm to portfolio p1 and show top 2 weights of po
 to the change of portfolio structure that adds ibm. if task2 depends on task1 and task3 but not for args just include another tag named depends and add all the task ids 
 it depends on but not for args like depends: [id1, id2]. if task2 depends for say arg symbol to task1 encode the dependency inside the args as dictionary with key 
 the arg name ie symbol and value the taskid it depends on here task1. 
+if task3 depends on task2 and task2 depends on task1 only output the direct dependency ie task2  depends on task1 and  task3 depends on task2 only.
 
 Use the key depends  to signify dependencies between tasks
 """
     resp = await client.chat.completions.create(
         model="gpt-4.1-mini",
+        #model="gpt-4-turbo-preview",
         messages=[{"role": "system", "content": "You are an expert financial task planner."},
                   {"role": "user", "content": prompt}],
         temperature=0
@@ -297,6 +310,7 @@ Use the key depends  to signify dependencies between tasks
 async def llm_resolve_args(prompt):
     resp = await client.chat.completions.create(
         model="gpt-4.1-mini",
+        #model="gpt-4-turbo-preview",
         messages=[{"role": "system", "content": "You are an expert financial argument resolver."},
                   {"role": "user", "content": prompt}],
         temperature=0
@@ -311,7 +325,7 @@ async def llm_resolve_args(prompt):
 async def agent_execute(user_input):
     parse_response = await llm_parse_user_input(user_input, tool_registry)
     task_spec = parse_response["tasks"]
-    print(task for task in task_spec)
+    print(task_spec)
     graph = build_dag(task_spec, llm_resolve_args, fn_map)
     result = await graph.ainvoke({})
     print("\nFinal DAG State:")
@@ -325,3 +339,5 @@ async def agent_execute(user_input):
 if __name__ == "__main__":
     user_input = "Add 100 shares of IBM to P1, show top 3 assets, print sectors of first 2"
     asyncio.run(agent_execute(user_input))
+    # user_input = "Add 300 shares of AAPL to P1, show top 1 asset by weight, then lookup sector of smallest asset by weight"
+    # asyncio.run(agent_execute(user_input))
