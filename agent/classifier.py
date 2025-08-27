@@ -22,7 +22,8 @@ async def classify_intent_and_create_plan(query: str):
 **Available Tools:**
 {json.dumps(tool_schemas, indent=2)}
 
-Your response MUST be a JSON object with a single key "plan", which is a list of stages. Each stage is a list of tool calls.
+Your response MUST be a JSON object with a single key "plan", which is a list of stages. Each stage is a list of tool calls. 
+please include an "id" for each tool as integer which gets increased by 1
 
 **Example 1: Parallel Reads**
 User: "what are the sectors for BBID1 and BBID3 and what are the top 3 energy names for P1?"
@@ -31,10 +32,12 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "lookup_sectors",
         "parameters": {{ "asset_ids": ["BBID1", "BBID3"] }}
       }},
       {{
+        "id" : 2,
         "tool_name": "show_top_constituents",
         "parameters": {{ "portfolio_id": "P1", "n": 3, "sector": "Energy" }}
       }}
@@ -49,12 +52,14 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "adjust_sector_exposure",
         "parameters": {{ "portfolio_id": "P1", "sector": "Energy", "set_weight": 0.15 }}
       }}
     ],
     [
       {{
+        "id" : 2,
         "tool_name": "show_top_constituents",
         "parameters": {{ "portfolio_id": "P1", "n": 6, "sector": "Energy" }}
       }}
@@ -69,6 +74,7 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "show_top_constituents",
         "parameters": {{
           "portfolio_id": "P1",
@@ -84,12 +90,12 @@ User: "revert P1, add 1% textiles in P1, move 6% from banking to financials and 
 Your response:
 {{
   "plan": [
-    [{{"tool_name": "reset_portfolio", "parameters": {{"portfolio_id": "P1"}} }}],
-    [{{"tool_name": "batch_adjust_sectors", "parameters": {{"portfolio_id": "P1", "adjustments": [{{"sector": "Textiles", "increase_by_weight": 0.01}}]}} }}],
-    [{{"tool_name": "move_weight", "parameters": {{"portfolio_id": "P1", "from_sector": "Banking", "to_sectors": [{{ "sector": "Financials", "weight_to_add": 0.03 }}, {{ "sector": "Energy", "weight_to_add": 0.03 }}]}} }}],
+    [{{"id" : 1, "tool_name": "reset_portfolio", "parameters": {{"portfolio_id": "P1"}} }}],
+    [{{"id" : 2, "tool_name": "batch_adjust_sectors", "parameters": {{"portfolio_id": "P1", "adjustments": [{{"sector": "Textiles", "increase_by_weight": 0.01}}]}} }}],
+    [{{"id" : 3,"tool_name": "move_weight", "parameters": {{"portfolio_id": "P1", "from_sector": "Banking", "to_sectors": [{{ "sector": "Financials", "weight_to_add": 0.03 }}, {{ "sector": "Energy", "weight_to_add": 0.03 }}]}} }}],
     [
-      {{"tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Textiles"}} }},
-      {{"tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Energy"}} }}
+      {{"id" : 4, "tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Textiles"}} }},
+      {{"id" : 5, "tool_name": "show_top_constituents", "parameters": {{"portfolio_id": "P1", "n": 3, "sector": "Energy"}} }}
     ]
   ]
 }}
@@ -101,6 +107,7 @@ Your response:
   "plan": [
     [
       {{
+       "id" : 1,
         "tool_name": "manage_assets_by_quantity",
         "parameters": {{
           "portfolio_id": "P1000",
@@ -122,6 +129,7 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "create_portfolio",
         "parameters": {{
           "portfolio_id": "P3",
@@ -143,6 +151,7 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "create_portfolio",
         "parameters": {{
           "portfolio_id": "P2",
@@ -160,12 +169,14 @@ Your response:
   "plan": [
     [
       {{
+        "id" : 1,
         "tool_name": "show_top_constituents",
         "parameters": {{ "portfolio_id": "P100", "n": 5 }}
       }}
     ],
     [
       {{
+       "id" : 2,
         "tool_name": "lookup_sectors",
         "parameters": {{ "asset_ids": "$PREVIOUS_STAGE_OUTPUT" }}
       }}
@@ -189,6 +200,7 @@ Your response:
 
     # Log token usage
     usage = completion.usage
+    print(usage)
     print(f"[Token Usage - Planner] Input: {usage.prompt_tokens}, Output: {usage.completion_tokens}, Total: {usage.total_tokens}")
 
     # --- Logprobs Analysis ---
